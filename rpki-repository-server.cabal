@@ -16,8 +16,13 @@ extra-source-files:  README.org
 library
   hs-source-dirs:      src
   exposed-modules:     RPKI.Repository.Server
+                     , RPKI.Repository.Notification
+                     , RPKI.Repository.Snapshot
+                     , RPKI.Repository.XML
   build-depends:       base >= 4.7 && < 5
+                     , warp
                      , wai-app-static
+                     , hxt 
   default-language:    Haskell2010
 
 executable rpki-repository-server

@@ -1,7 +1,7 @@
 module Main where
 
-import RPKI.Repository.Server as Server
+import RPKI.Repository.Server
 
 main :: IO ()
 main = do
-  Server.startServer $ Config "bla" 80
+  startServer $ Config "/home/rcintra/temp" 8080
