@@ -21,9 +21,11 @@ startServer config =
       contents = filePath config
       staticSettings = defaultWebAppSettings contents
       app = staticApp staticSettings
-  in do runX (xunpickleDocument xpSnapshot
-                                [withRemoveWS yes]
-                                ((filePath config) ++ "/snapshot.xml")
-              >>> arrIO (\n -> do {print n; return n;}))
+  in do -- runX (xunpickleDocument xpSnapshot
+        --                         [withRemoveWS yes]
+        --                         ((filePath config) ++ "/snapshot.xml")
+        --       >>> arrIO (\n -> do {print n; return n;}))
         --run serverPort app
+        snapshot <- loadSnapshot $ contents ++ "/snapshot.xml"
+        print snapshot
         return ()

@@ -23,6 +23,8 @@ library
                      , warp
                      , wai-app-static
                      , hxt 
+                     , hexpat
+                     , bytestring
   default-language:    Haskell2010
 
 executable rpki-repository-server

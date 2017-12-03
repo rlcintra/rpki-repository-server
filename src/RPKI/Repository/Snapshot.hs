@@ -2,10 +2,12 @@
 
 module RPKI.Repository.Snapshot where
 
-type SessionId = String
+import qualified Data.ByteString.Char8 as B
+
+type SessionId = B.ByteString
 type Serial = Int
-type URI = String
-type ObjectPayload = String
+type URI = B.ByteString
+type ObjectPayload = B.ByteString
 
 data Snapshot = Snapshot {
   sessionId    :: SessionId,
