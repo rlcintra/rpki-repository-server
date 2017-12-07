@@ -26,6 +26,13 @@ startServer config =
         --                         ((filePath config) ++ "/snapshot.xml")
         --       >>> arrIO (\n -> do {print n; return n;}))
         --run serverPort app
+        notification <- runX $ xunpickleDocument xpNotification
+                                         [withRemoveWS yes]
+                                         ((filePath config) ++ "/notification.xml")
+        print notification
         snapshot <- loadSnapshot $ contents ++ "/snapshot.xml"
-        print snapshot
+        case snapshot of
+          Left e  -> print e
+          Right s -> writeSnapshot s (contents ++ "/snapshot.out")
+        --print snapshot
         return ()

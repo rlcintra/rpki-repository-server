@@ -1,12 +1,18 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module RPKI.Repository.XML where
 
+import Conduit
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
+import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.XML.Types as X
 import Text.XML.HXT.Core
 import Text.XML.Expat.SAX
+import Text.XML.Stream.Render (renderBytes, def)
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as C8L
 
@@ -125,3 +131,41 @@ parsePublish es = S.Publish <$> uri <*> objectPayload
 getAttr :: C8.ByteString -> [(C8.ByteString, C8.ByteString)] -> Either String C8.ByteString
 getAttr name attrs =
    maybe (Left ("Attribute" ++ (C8.unpack name) ++ "not found.")) (Right) (lookup name attrs)
+
+-- Snapshot (SAX - Conduit - Write)
+
+writeSnapshot :: S.Snapshot -> FilePath -> IO ()
+writeSnapshot s f =
+   runConduitRes $ sourceSnapshot s .| renderBytes def .| sinkFileBS f
+
+sourceSnapshot :: MonadIO m => S.Snapshot -> Source m X.Event
+sourceSnapshot s = do
+  yieldMany $ snapshotHeader
+  yieldMany $ concatMap publishEvent $ S.publishs s
+  yieldMany $ snapshotFooter
+
+  where snapshotHeader =
+          [
+            X.EventBeginDocument,
+            X.EventBeginElement snapshotName [ (toName "session_id", [X.ContentText $ decodeUtf8 $ S.sessionId s]),
+                                               (toName "serial", [X.ContentText $ T.pack . show $ S.serial s]),
+                                               (toName "xmlns", [X.ContentText "http://www.ripe.net/rpki/rrdp"]) ]
+          ]
+        publishEvent p =
+          [
+            X.EventBeginElement publishName [(toName "uri", [X.ContentText $ decodeUtf8 $ S.uri p])],
+            X.EventContent $ X.ContentText $ decodeUtf8 $ S.object p,
+            X.EventEndElement publishName
+          ]
+        snapshotFooter =
+          [
+            X.EventEndElement snapshotName,
+            X.EventEndDocument
+          ]
+
+snapshotName, publishName :: X.Name
+snapshotName = toName "snapshot"
+publishName = toName "publish"
+
+toName :: T.Text -> X.Name
+toName name = X.Name name Nothing Nothing
