@@ -4,4 +4,4 @@ import RPKI.Repository.Server
 
 main :: IO ()
 main = do
-  startServer $ Config "/home/rcintra/temp" 8080
+  startServer $ Config "/home/rcintra/temp/rpki_contents" 8080

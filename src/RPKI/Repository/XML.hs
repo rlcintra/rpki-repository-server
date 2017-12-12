@@ -5,8 +5,11 @@
 module RPKI.Repository.XML where
 
 import Conduit
+import Crypto.Hash
+import Crypto.Hash.Conduit (sinkHash)
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
+import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.XML.Types as X
@@ -22,6 +25,19 @@ import Data.Char (isSpace)
 import Data.Foldable (for_)
 
 -- Notification
+
+loadNotification :: FilePath -> IO (Either String N.Notification)
+loadNotification p = do
+  notifications <- runX $ xunpickleDocument xpNotification [withRemoveWS yes] p
+  case listToMaybe notifications of
+    Just notification -> return $ Right notification
+    Nothing           -> return $ Left "Notification file could not be parsed."
+
+writeNotification :: N.Notification -> FilePath -> IO ()
+writeNotification n p =
+  do
+    _ <- runX $ constA n >>> xpickleDocument xpNotification [] p
+    return ()
 
 instance XmlPickler N.Notification where
   xpickle = xpNotification
@@ -94,18 +110,19 @@ loadSnapshot file = do
 
 processSaxSnapshot :: [SAXEvent C8.ByteString C8.ByteString] -> Either String S.Snapshot
 processSaxSnapshot [] = Left "No snapshot element found"
-processSaxSnapshot (e:es) = S.Snapshot <$> sessionId <*> serial <*> publishs
-  where sessionId = getSnapshotAttr (C8.pack "session_id") e
-        serial = read . C8.unpack <$> getSnapshotAttr (C8.pack "serial") e
-        getSnapshotAttr :: C8.ByteString -> SAXEvent C8.ByteString C8.ByteString -> Either String C8.ByteString
-        getSnapshotAttr attr e =
-          case e of
-            StartElement elemName attrs ->
-              if elemName /= C8.pack "snapshot"
-              then Left "Element is not a snapshot"
-              else maybe (Left $ "Attribute not found") (Right) (lookup attr attrs)
-            _ -> Left "Root element is not snapshot."
-        publishs = getPublishs es
+processSaxSnapshot (e:es) =
+  case e of
+    XMLDeclaration _ _ _ -> processSaxSnapshot es
+    StartElement elemName attrs ->
+         if elemName /= C8.pack "snapshot"
+         then Left "Element is not a snapshot"
+         else S.Snapshot <$> sessionId <*> serial <*> publishs
+         where sessionId = getSnapshotAttr (C8.pack "session_id")
+               serial = read . C8.unpack <$> getSnapshotAttr (C8.pack "serial")
+               getSnapshotAttr :: C8.ByteString -> Either String C8.ByteString
+               getSnapshotAttr attr = maybe (Left $ "Attribute not found") (Right) (lookup attr attrs)
+               publishs = getPublishs es
+    _ -> Left "Error parsing snapshot."
 
 getPublishs :: [SAXEvent C8.ByteString C8.ByteString] -> Either String [S.Publish]
 getPublishs es
@@ -134,9 +151,11 @@ getAttr name attrs =
 
 -- Snapshot (SAX - Conduit - Write)
 
-writeSnapshot :: S.Snapshot -> FilePath -> IO ()
-writeSnapshot s f =
-   runConduitRes $ sourceSnapshot s .| renderBytes def .| sinkFileBS f
+writeSnapshot :: S.Snapshot -> FilePath -> IO (String)
+writeSnapshot s f = do
+  digest <- runConduitRes $ sourceSnapshot s .| renderBytes def .| sinkSnapshotFile .| sinkHash
+  return $ show (digest :: Digest SHA256)
+  where sinkSnapshotFile = passthroughSink (sinkFileBS f) (\_ -> return ())
 
 sourceSnapshot :: MonadIO m => S.Snapshot -> Source m X.Event
 sourceSnapshot s = do
