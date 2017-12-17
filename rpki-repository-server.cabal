@@ -16,22 +16,25 @@ extra-source-files:  README.org
 library
   hs-source-dirs:      src
   exposed-modules:     RPKI.Repository.Server
+                     , RPKI.Repository.Config
                      , RPKI.Repository.Notification
+                     , RPKI.Repository.Rsync
                      , RPKI.Repository.Snapshot
                      , RPKI.Repository.XML
   build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , conduit-combinators
                      , cryptonite
                      , cryptonite-conduit
                      , directory
                      , fast-logger
-                     , warp
-                     , wai-app-static
-                     , hxt 
                      , hexpat
-                     , bytestring
-                     , conduit-combinators
+                     , hxt 
+                     , process
                      , text
                      , uuid
+                     , warp
+                     , wai-app-static
                      , xml-types
                      , xml-conduit
   default-language:    Haskell2010

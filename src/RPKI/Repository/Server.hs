@@ -10,39 +10,34 @@ import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
 import Data.UUID (toString)
 import qualified Data.UUID.V4 as UUIDv4
+import Control.Monad (forM)
 import Network.Wai.Application.Static
 import Network.Wai.Handler.Warp (run)
+import RPKI.Repository.Config
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
+import RPKI.Repository.Rsync
 import RPKI.Repository.XML
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.Log.FastLogger
 import System.Log.FastLogger.Date
 import Text.XML.HXT.Core
 
-data Config  = Config {
-  publicationPath :: FilePath,
-  port     :: Int
-
-}
-
 startServer :: Config -> IO()
 startServer config =
-  let serverPort = port config
+  let serverPort = rrdpPort config
       contents = publicationPath config
       staticSettings = defaultWebAppSettings contents
       app = staticApp staticSettings
   in do logger <- setupLogger
         (logger2, closeLogger2) <- setupLogger'
         log'' logger2 "Initisalising server"
-
         status <- loadCurrentStatus config
         (notification, snapshot) <- case status of
                                       Right (n, s) -> return (n, s)
                                       Left msg -> do
                                         log'' logger2 msg
                                         initialiseServerSession config
-
         flushLogStr logger
 
 
@@ -80,6 +75,8 @@ initialiseServerSession :: Config -> IO ((N.Notification, S.Snapshot))
 initialiseServerSession c =
   do sessionId <- toString <$> UUIDv4.nextRandom
      let serial = 1
+     updateMirrorErrors <- updateRsyncMirrors c
+     forM updateMirrorErrors putStrLn -- TODO: use logger
      publishList <- getInitialPublishList c
      createDirectoryIfMissing True $ sessionPath c sessionId
      (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial publishList
