@@ -20,10 +20,13 @@ library
                      , RPKI.Repository.Notification
                      , RPKI.Repository.Rsync
                      , RPKI.Repository.Snapshot
+                     , RPKI.Repository.State
                      , RPKI.Repository.XML
   build-depends:       base >= 4.7 && < 5
+                     , base64-bytestring
                      , bytestring
                      , conduit-combinators
+                     , containers
                      , cryptonite
                      , cryptonite-conduit
                      , directory
@@ -45,4 +48,3 @@ executable rpki-repository-server
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
                      , rpki-repository-server
-  

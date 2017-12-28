@@ -7,6 +7,7 @@ module RPKI.Repository.Server
 
 import Crypto.Hash
 import qualified Data.ByteString.Char8 as B
+import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.UUID (toString)
 import qualified Data.UUID.V4 as UUIDv4
@@ -16,6 +17,7 @@ import Network.Wai.Handler.Warp (run)
 import RPKI.Repository.Config
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
+import qualified RPKI.Repository.State as State
 import RPKI.Repository.Rsync
 import RPKI.Repository.XML
 import System.Directory (doesFileExist, createDirectoryIfMissing)
@@ -71,7 +73,7 @@ loadCurrentStatus c =
                                Left msg' -> return $ Left msg'
                                Right s   -> return (Right (n,s))
 
-initialiseServerSession :: Config -> IO ((N.Notification, S.Snapshot))
+initialiseServerSession :: Config -> IO (N.Notification, S.Snapshot)
 initialiseServerSession c =
   do sessionId <- toString <$> UUIDv4.nextRandom
      let serial = 1
@@ -84,7 +86,10 @@ initialiseServerSession c =
      return (notification, snapshot)
 
 getInitialPublishList :: Config -> IO [S.Publish]
-getInitialPublishList c = return [] -- TODO
+getInitialPublishList c = map convert <$> diff c Map.empty
+  where convert d = case d of
+                      State.Added u h p -> S.Publish u p
+                      _ -> undefined
 
 createSnapshot :: Config -> S.SessionId -> S.Serial -> [S.Publish] -> IO (S.Snapshot, String)
 createSnapshot c sId serial ps =
@@ -113,16 +118,16 @@ createNotification c hash sId serial snapshot deltas =
 
 -- Paths
 notificationPath :: Config -> FilePath
-notificationPath c = (publicationPath c) ++ "/notification.xml"
+notificationPath c = publicationPath c ++ "/notification.xml"
 
 snapshotPath :: Config -> S.SessionId -> FilePath
-snapshotPath c sId = (sessionPath c $ B.unpack sId) ++ "/snapshot.xml"
+snapshotPath c sId = sessionPath c (B.unpack sId) ++ "/snapshot.xml"
 
 doesNotificationFileExist :: Config -> IO Bool
 doesNotificationFileExist = doesFileExist . notificationPath
 
 sessionPath :: Config -> N.SessionId -> FilePath
-sessionPath c sId = (publicationPath c) ++ "/" ++ sId
+sessionPath c sId = publicationPath c ++ "/" ++ sId
 
 -- Utils
 setupLogger :: IO LoggerSet

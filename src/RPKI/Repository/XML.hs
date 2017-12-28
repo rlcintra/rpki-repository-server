@@ -7,8 +7,9 @@ module RPKI.Repository.XML where
 import Conduit
 import Crypto.Hash
 import Crypto.Hash.Conduit (sinkHash)
-import qualified RPKI.Repository.Notification as N
-import qualified RPKI.Repository.Snapshot as S
+import qualified Data.ByteString.Base64 as Base64
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy.Char8 as C8L
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
@@ -16,8 +17,8 @@ import qualified Data.XML.Types as X
 import Text.XML.HXT.Core
 import Text.XML.Expat.SAX
 import Text.XML.Stream.Render (renderBytes, def)
-import qualified Data.ByteString.Char8 as C8
-import qualified Data.ByteString.Lazy.Char8 as C8L
+import qualified RPKI.Repository.Notification as N
+import qualified RPKI.Repository.Snapshot as S
 
 import Debug.Trace as T
 
@@ -147,11 +148,11 @@ parsePublish es = S.Publish <$> uri <*> objectPayload
 
 getAttr :: C8.ByteString -> [(C8.ByteString, C8.ByteString)] -> Either String C8.ByteString
 getAttr name attrs =
-   maybe (Left ("Attribute" ++ (C8.unpack name) ++ "not found.")) (Right) (lookup name attrs)
+   maybe (Left ("Attribute" ++ C8.unpack name ++ "not found.")) Right (lookup name attrs)
 
 -- Snapshot (SAX - Conduit - Write)
 
-writeSnapshot :: S.Snapshot -> FilePath -> IO (String)
+writeSnapshot :: S.Snapshot -> FilePath -> IO String
 writeSnapshot s f = do
   digest <- runConduitRes $ sourceSnapshot s .| renderBytes def .| sinkSnapshotFile .| sinkHash
   return $ show (digest :: Digest SHA256)
@@ -159,9 +160,9 @@ writeSnapshot s f = do
 
 sourceSnapshot :: MonadIO m => S.Snapshot -> Source m X.Event
 sourceSnapshot s = do
-  yieldMany $ snapshotHeader
+  yieldMany snapshotHeader
   yieldMany $ concatMap publishEvent $ S.publishs s
-  yieldMany $ snapshotFooter
+  yieldMany snapshotFooter
 
   where snapshotHeader =
           [
@@ -173,7 +174,7 @@ sourceSnapshot s = do
         publishEvent p =
           [
             X.EventBeginElement publishName [(toName "uri", [X.ContentText $ decodeUtf8 $ S.uri p])],
-            X.EventContent $ X.ContentText $ decodeUtf8 $ S.object p,
+            X.EventContent $ X.ContentText $ decodeUtf8 . Base64.encode $ S.object p,
             X.EventEndElement publishName
           ]
         snapshotFooter =
