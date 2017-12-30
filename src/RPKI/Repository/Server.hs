@@ -5,19 +5,22 @@ module RPKI.Repository.Server
     Config (..)
   ) where
 
-import Crypto.Hash
+import Control.Concurrent
+import Control.Monad
+import Crypto.Hash as C
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Map as Map
+import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.UUID (toString)
 import qualified Data.UUID.V4 as UUIDv4
 import Control.Monad (forM)
 import Network.Wai.Application.Static
 import Network.Wai.Handler.Warp (run)
-import RPKI.Repository.Config
+import RPKI.Repository.Data
+import qualified RPKI.Repository.Delta as Delta
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
-import qualified RPKI.Repository.State as State
 import RPKI.Repository.Rsync
 import RPKI.Repository.XML
 import System.Directory (doesFileExist, createDirectoryIfMissing)
@@ -34,62 +37,42 @@ startServer config =
   in do logger <- setupLogger
         (logger2, closeLogger2) <- setupLogger'
         log'' logger2 "Initisalising server"
-        status <- loadCurrentStatus config
-        (notification, snapshot) <- case status of
-                                      Right (n, s) -> return (n, s)
-                                      Left msg -> do
-                                        log'' logger2 msg
-                                        initialiseServerSession config
+        state <- initialiseState config
         flushLogStr logger
-
-
-    -- runX (xunpickleDocument xpSnapshot
-        --                         [withRemoveWS yes]
-        --                         ((publicationPath config) ++ "/snapshot.xml")
-        --       >>> arrIO (\n -> do {print n; return n;}))
         --run serverPort app
---         notification <- runX $ xunpickleDocument xpNotification
---                                          [withRemoveWS yes]
---                                          ((publicationPath config) ++ "/notification.xml")
---         print notification
---         snapshot <- loadSnapshot $ contents ++ "/snapshot.xml"
---         case snapshot of
---           Left e  -> print e
---           Right s -> writeSnapshot s (contents ++ "/snapshot.out")
---         --print snapshot
---         return ()
 
-
-loadCurrentStatus :: Config -> IO (Either String (N.Notification, S.Snapshot))
-loadCurrentStatus c =
+initialiseState :: Config -> IO (Either String State)
+initialiseState c =
   do notificationFileExist <- doesNotificationFileExist c
      if not notificationFileExist
-     then return $ Left "Notification files does not exist"
+     then Right <$> initialiseServerSession c
      else do notification <- loadNotification $ notificationPath c
              case notification of
                Left msg -> return $ Left msg
                Right n -> do snapshot <- loadSnapshot $ snapshotPath c (B.pack $ N.sessionId n)
                              case snapshot of
                                Left msg' -> return $ Left msg'
-                               Right s   -> return (Right (n,s))
+                               Right s   -> Right <$> newMVar (n, stateMapFromSnapshot s)
 
-initialiseServerSession :: Config -> IO (N.Notification, S.Snapshot)
+initialiseServerSession :: Config -> IO State
 initialiseServerSession c =
   do sessionId <- toString <$> UUIDv4.nextRandom
      let serial = 1
      updateMirrorErrors <- updateRsyncMirrors c
-     forM updateMirrorErrors putStrLn -- TODO: use logger
-     publishList <- getInitialPublishList c
+     --forM updateMirrorErrors putStrLn -- TODO: use logger
+     smvs <- getInitialStateMapValues c
      createDirectoryIfMissing True $ sessionPath c sessionId
-     (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial publishList
+     (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial (map publish smvs)
      notification <- createNotification c hash sessionId serial snapshot []
-     return (notification, snapshot)
+     newMVar (notification,
+              foldr (\v l -> Map.insert (S.uri . publish $ v) v l) (Map.empty :: Map.Map S.URI StateMapValue) smvs)
 
-getInitialPublishList :: Config -> IO [S.Publish]
-getInitialPublishList c = map convert <$> diff c Map.empty
-  where convert d = case d of
-                      State.Added u h p -> S.Publish u p
-                      _ -> undefined
+getInitialStateMapValues :: Config -> IO [StateMapValue]
+getInitialStateMapValues c = catMaybes . fmap convert <$> diff c Map.empty
+  where convert :: Diff -> Maybe StateMapValue
+        convert d = case d of
+                      Added u h p -> Just $ StateMapValue (S.Publish u p) h
+                      _ -> Nothing
 
 createSnapshot :: Config -> S.SessionId -> S.Serial -> [S.Publish] -> IO (S.Snapshot, String)
 createSnapshot c sId serial ps =
@@ -115,6 +98,33 @@ createNotification c hash sId serial snapshot deltas =
              }
      writeNotification n (notificationPath c)
      return n
+
+stateMapFromSnapshot :: S.Snapshot -> Map.Map S.URI StateMapValue
+stateMapFromSnapshot s =
+  foldr (\p l -> Map.insert (S.uri p) (StateMapValue p (B.pack $ show (C.hash (S.object p) :: Digest SHA256))) l) Map.empty (S.publishs s)
+
+recurrentRsyncUpdate :: Config -> State -> IO ()
+recurrentRsyncUpdate c s = do
+  _ <- updateRsyncMirrors c
+  (notification, sMap) <- takeMVar s
+  diffs <- diff c sMap
+  sv <- applyDiffs c (notification, sMap) diffs
+  putMVar s sv
+
+applyDiffs :: Config -> StateValue -> [Diff] -> IO StateValue
+applyDiffs _ sv [] = return sv
+applyDiffs c sv@(n, sMap) diffs = do
+  delta <- createDelta
+  writeDelta delta (rrdpURI c)
+  return undefined
+  where createDelta = do
+          let serial = (N.serial n) + 1
+          let (ps, ws) = foldr convert ([],[]) diffs
+          return
+          return ()
+        convert (Added u h p) (ps, ws) = ((Delta.Publish u p Nothing) : ps, ws)
+        convert (Updated u h p) (ps, ws) = ((Delta.Publish u p (Just h)) : ps, ws)
+        convert (Added u h p) (ps, ws) = ((ps, (Delta.Withdraw u h) : ws)
 
 -- Paths
 notificationPath :: Config -> FilePath

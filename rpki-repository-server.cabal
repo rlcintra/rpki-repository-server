@@ -16,11 +16,10 @@ extra-source-files:  README.org
 library
   hs-source-dirs:      src
   exposed-modules:     RPKI.Repository.Server
-                     , RPKI.Repository.Config
+                     , RPKI.Repository.Data
                      , RPKI.Repository.Notification
                      , RPKI.Repository.Rsync
                      , RPKI.Repository.Snapshot
-                     , RPKI.Repository.State
                      , RPKI.Repository.XML
   build-depends:       base >= 4.7 && < 5
                      , base64-bytestring

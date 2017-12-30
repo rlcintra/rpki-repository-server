@@ -1,6 +1,6 @@
 module Main where
 
-import RPKI.Repository.Config
+import RPKI.Repository.Data
 import RPKI.Repository.Server
 
 main :: IO ()

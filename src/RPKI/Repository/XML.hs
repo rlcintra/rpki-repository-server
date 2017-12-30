@@ -17,6 +17,7 @@ import qualified Data.XML.Types as X
 import Text.XML.HXT.Core
 import Text.XML.Expat.SAX
 import Text.XML.Stream.Render (renderBytes, def)
+import qualified RPKI.Repository.Delta as D
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
 
@@ -189,3 +190,9 @@ publishName = toName "publish"
 
 toName :: T.Text -> X.Name
 toName name = X.Name name Nothing Nothing
+
+
+-- Delta (Write)
+
+writeDelta :: D.Delta -> FilePath -> IO ()
+writeDelta = undefined -- TODO

@@ -11,9 +11,8 @@ import qualified Data.Set as Set
 import Data.Maybe (catMaybes, isJust)
 import Control.Monad
 import GHC.IO.Handle (hGetContents)
-import RPKI.Repository.Config
+import RPKI.Repository.Data
 import RPKI.Repository.Snapshot (URI, ObjectPayload)
-import RPKI.Repository.State
 import System.Directory
 import System.Exit
 import System.Process
@@ -49,7 +48,7 @@ getRsyncPath base url = base ++ "/" ++ sanatisedUrl
 getURIFromRsyncPath :: String -> FilePath -> URI
 getURIFromRsyncPath base fp = C8.pack $ "rsync://" ++ (fp \\ base)
 
-diff :: Config -> State -> IO [Diff]
+diff :: Config -> Map.Map URI StateMapValue -> IO [Diff]
 diff c s = do
   rsyncURIs <- runConduitRes $ sourceDirectoryDeep True (rsyncPath c) .| mapC (getURIFromRsyncPath rsyncBase) .| sinkList
   let uriSet = Set.fromList rsyncURIs
