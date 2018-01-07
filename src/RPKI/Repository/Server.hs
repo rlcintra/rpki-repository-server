@@ -24,7 +24,7 @@ import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
 import RPKI.Repository.Rsync
 import RPKI.Repository.XML
-import System.Directory (doesFileExist, createDirectoryIfMissing, createDirectory)
+import System.Directory (doesFileExist, createDirectoryIfMissing, createDirectory, getFileSize)
 import System.Log.FastLogger
 import System.Log.FastLogger.Date
 import Text.XML.HXT.Core
@@ -91,18 +91,24 @@ createSnapshot c sId serial ps =
 
 createNotification :: Config -> String -> N.SessionId -> N.Serial -> S.Snapshot -> [N.Delta] -> IO N.Notification
 createNotification c hash sId serial snapshot deltas =
-  do let nSnapshot = N.Snapshot {
-                       N.uri  = snapshotURI c (B.pack sId) serial,
-                       N.hash  = hash
+  do cleanedUpDeltas <- cleanupDeltas
+     let nSnapshot = N.Snapshot {
+                       N.uri  = sURI,
+                       N.hash = hash
                      }
      let n = N.Notification {
                N.sessionId = sId,
                N.serial    = serial,
                N.snapshot  = nSnapshot,
-               N.deltas    = deltas
+               N.deltas    = cleanedUpDeltas
              }
      writeNotification n (notificationPath c)
      return n
+     where sURI = snapshotURI c (B.pack sId) serial
+           cleanupDeltas = do
+             snapshotSize <- getFileSize $ getPathForSnapshot c snapshot
+             deltaSizes <- mapM (\d -> getFileSize $ deltaPath c sId (N.serial (d :: N.Delta))) deltas
+             return $ take (length $ takeWhile (<= snapshotSize) $ scanr (+) 0 deltaSizes) deltas
 
 stateMapFromSnapshot :: S.Snapshot -> Map.Map S.URI StateMapValue
 stateMapFromSnapshot s =
@@ -162,6 +168,9 @@ notificationPath c = publicationPath c ++ "/notification.xml"
 snapshotPath :: Config -> S.SessionId -> S.Serial -> FilePath
 snapshotPath c sId serial = serialPath c (B.unpack sId ) serial ++ "/snapshot.xml"
 
+getPathForSnapshot :: Config -> S.Snapshot -> FilePath
+getPathForSnapshot c s = snapshotPath c (S.sessionId s) (S.serial s)
+
 doesNotificationFileExist :: Config -> IO Bool
 doesNotificationFileExist = doesFileExist . notificationPath
 
@@ -173,6 +182,9 @@ serialPath c sId serial = sessionPath c sId ++ "/" ++ show serial
 
 deltaPath :: Config -> N.SessionId -> Delta.Serial -> FilePath
 deltaPath c sId serial = serialPath c sId serial ++ "/delta.xml"
+
+getPathForDelta :: Config -> Delta.Delta -> FilePath
+getPathForDelta c d = deltaPath c (Delta.sessionId d) (Delta.serial d)
 
 -- URIs
 snapshotURI :: Config -> S.SessionId -> S.Serial -> N.URI
