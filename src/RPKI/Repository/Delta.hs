@@ -4,11 +4,11 @@ module RPKI.Repository.Delta where
 
 import qualified Data.ByteString.Char8 as B
 
-type SessionId = B.ByteString
+type SessionId = String
 type Serial = Int
 type URI = B.ByteString
 type ObjectPayload = B.ByteString
-type Hash = String
+type Hash = B.ByteString
 
 data Delta = Delta {
   sessionId    :: SessionId,

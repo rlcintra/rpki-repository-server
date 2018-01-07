@@ -6,15 +6,16 @@ module RPKI.Repository.Server
   ) where
 
 import Control.Concurrent
-import Control.Monad
 import Crypto.Hash as C
+import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
+import Data.Time.Clock
 import Data.UUID (toString)
 import qualified Data.UUID.V4 as UUIDv4
-import Control.Monad (forM)
+import Control.Monad (forM, void)
 import Network.Wai.Application.Static
 import Network.Wai.Handler.Warp (run)
 import RPKI.Repository.Data
@@ -23,7 +24,7 @@ import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
 import RPKI.Repository.Rsync
 import RPKI.Repository.XML
-import System.Directory (doesFileExist, createDirectoryIfMissing)
+import System.Directory (doesFileExist, createDirectoryIfMissing, createDirectory)
 import System.Log.FastLogger
 import System.Log.FastLogger.Date
 import Text.XML.HXT.Core
@@ -38,8 +39,11 @@ startServer config =
         (logger2, closeLogger2) <- setupLogger'
         log'' logger2 "Initisalising server"
         state <- initialiseState config
+        case state of
+          Left errorMsg -> log'' logger2 errorMsg
+          Right s       -> void (forkIO (startPeriodicRsyncUpdate config s))
         flushLogStr logger
-        --run serverPort app
+        run serverPort app
 
 initialiseState :: Config -> IO (Either String State)
 initialiseState c =
@@ -49,7 +53,8 @@ initialiseState c =
      else do notification <- loadNotification $ notificationPath c
              case notification of
                Left msg -> return $ Left msg
-               Right n -> do snapshot <- loadSnapshot $ snapshotPath c (B.pack $ N.sessionId n)
+               Right n -> do snapshot <- loadSnapshot $
+                                snapshotPath c (B.pack $ N.sessionId n) (N.serial (n :: N.Notification))
                              case snapshot of
                                Left msg' -> return $ Left msg'
                                Right s   -> Right <$> newMVar (n, stateMapFromSnapshot s)
@@ -61,7 +66,7 @@ initialiseServerSession c =
      updateMirrorErrors <- updateRsyncMirrors c
      --forM updateMirrorErrors putStrLn -- TODO: use logger
      smvs <- getInitialStateMapValues c
-     createDirectoryIfMissing True $ sessionPath c sessionId
+     createDirectoryIfMissing True $ sessionPath c sessionId ++ "/" ++ show serial
      (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial (map publish smvs)
      notification <- createNotification c hash sessionId serial snapshot []
      newMVar (notification,
@@ -81,13 +86,13 @@ createSnapshot c sId serial ps =
                S.serial    = serial,
                S.publishs  = ps
             }
-     hash <- writeSnapshot s (snapshotPath c sId)
+     hash <- writeSnapshot s (snapshotPath c sId serial)
      return (s, hash)
 
 createNotification :: Config -> String -> N.SessionId -> N.Serial -> S.Snapshot -> [N.Delta] -> IO N.Notification
 createNotification c hash sId serial snapshot deltas =
   do let nSnapshot = N.Snapshot {
-                       N.uri  = snapshotPath c (B.pack sId),
+                       N.uri  = snapshotURI c (B.pack sId) serial,
                        N.hash  = hash
                      }
      let n = N.Notification {
@@ -101,10 +106,24 @@ createNotification c hash sId serial snapshot deltas =
 
 stateMapFromSnapshot :: S.Snapshot -> Map.Map S.URI StateMapValue
 stateMapFromSnapshot s =
-  foldr (\p l -> Map.insert (S.uri p) (StateMapValue p (B.pack $ show (C.hash (S.object p) :: Digest SHA256))) l) Map.empty (S.publishs s)
+  foldr (\p l -> Map.insert (S.uri p)
+    (StateMapValue p (B.pack $ show (C.hash (Base64.decodeLenient $ S.object p) :: Digest SHA256))) l)
+    Map.empty (S.publishs s)
+
+startPeriodicRsyncUpdate :: Config -> State -> IO ()
+startPeriodicRsyncUpdate c s = do
+  t1 <- getCurrentTime
+  recurrentRsyncUpdate c s
+  t2 <- getCurrentTime
+  let delay = rsyncUpdateFrequency c - round (diffUTCTime t2 t1)
+  if delay <= 0
+  then print "Warning: Rsync update delay is too short." -- TODO: use proper logging
+  else threadDelay $ delay * 1000 * 1000
+  startPeriodicRsyncUpdate c s
 
 recurrentRsyncUpdate :: Config -> State -> IO ()
 recurrentRsyncUpdate c s = do
+  print "Sync thread running" -- TODO: remove
   _ <- updateRsyncMirrors c
   (notification, sMap) <- takeMVar s
   diffs <- diff c sMap
@@ -114,30 +133,53 @@ recurrentRsyncUpdate c s = do
 applyDiffs :: Config -> StateValue -> [Diff] -> IO StateValue
 applyDiffs _ sv [] = return sv
 applyDiffs c sv@(n, sMap) diffs = do
-  delta <- createDelta
-  writeDelta delta (rrdpURI c)
-  return undefined
-  where createDelta = do
-          let serial = (N.serial n) + 1
-          let (ps, ws) = foldr convert ([],[]) diffs
-          return
-          return ()
-        convert (Added u h p) (ps, ws) = ((Delta.Publish u p Nothing) : ps, ws)
-        convert (Updated u h p) (ps, ws) = ((Delta.Publish u p (Just h)) : ps, ws)
-        convert (Added u h p) (ps, ws) = ((ps, (Delta.Withdraw u h) : ws)
+  createDirectory $ serialPath c sId serial
+  (delta, dHash) <- createDelta
+  let updatedMap = foldr updateMap sMap diffs
+  (s, sh) <- createSnapshot c (B.pack sId) serial (publish <$> Map.elems updatedMap)
+  let nDeltaUri = deltaURI c (B.pack sId) serial
+  let nDelta = N.Delta serial nDeltaUri dHash
+  updatedNotification <- createNotification c sh sId serial s (nDelta : N.deltas n)
+  return (updatedNotification, updatedMap)
+  where serial = N.serial (n :: N.Notification) + 1
+        (ps, ws) = foldr convert ([],[]) diffs
+        sId = N.sessionId n
+        createDelta = do
+          let delta = Delta.Delta (N.sessionId (n :: N.Notification)) serial ps ws
+          dHash <- writeDelta delta (deltaPath c (N.sessionId n) serial)
+          return (delta, dHash)
+        convert (Added u h p) (ps, ws) = (Delta.Publish u p Nothing : ps, ws)
+        convert (Updated u h p oldH) (ps, ws) = (Delta.Publish u p (Just oldH) : ps, ws)
+        convert (Removed u h) (ps, ws) = (ps, Delta.Withdraw u h : ws)
+        updateMap (Added u h p) m = Map.insert u (StateMapValue (S.Publish u p) h) m
+        updateMap (Updated u h p _) m = Map.insert u (StateMapValue (S.Publish u p) h) m
+        updateMap (Removed u h) m = Map.delete u m
 
 -- Paths
 notificationPath :: Config -> FilePath
 notificationPath c = publicationPath c ++ "/notification.xml"
 
-snapshotPath :: Config -> S.SessionId -> FilePath
-snapshotPath c sId = sessionPath c (B.unpack sId) ++ "/snapshot.xml"
+snapshotPath :: Config -> S.SessionId -> S.Serial -> FilePath
+snapshotPath c sId serial = serialPath c (B.unpack sId ) serial ++ "/snapshot.xml"
 
 doesNotificationFileExist :: Config -> IO Bool
 doesNotificationFileExist = doesFileExist . notificationPath
 
 sessionPath :: Config -> N.SessionId -> FilePath
 sessionPath c sId = publicationPath c ++ "/" ++ sId
+
+serialPath :: Config -> N.SessionId -> N.Serial -> FilePath
+serialPath c sId serial = sessionPath c sId ++ "/" ++ show serial
+
+deltaPath :: Config -> N.SessionId -> Delta.Serial -> FilePath
+deltaPath c sId serial = serialPath c sId serial ++ "/delta.xml"
+
+-- URIs
+snapshotURI :: Config -> S.SessionId -> S.Serial -> N.URI
+snapshotURI c sID serial = rrdpURI c ++ "/" ++ B.unpack sID ++ "/" ++ show serial ++ "/snapshot.xml"
+
+deltaURI :: Config -> S.SessionId -> S.Serial -> N.URI
+deltaURI c sID serial = rrdpURI c ++ "/" ++ B.unpack sID ++ "/" ++ show serial ++ "/delta.xml"
 
 -- Utils
 setupLogger :: IO LoggerSet

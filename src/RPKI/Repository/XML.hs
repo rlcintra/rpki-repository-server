@@ -7,10 +7,9 @@ module RPKI.Repository.XML where
 import Conduit
 import Crypto.Hash
 import Crypto.Hash.Conduit (sinkHash)
-import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as C8L
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.XML.Types as X
@@ -175,7 +174,7 @@ sourceSnapshot s = do
         publishEvent p =
           [
             X.EventBeginElement publishName [(toName "uri", [X.ContentText $ decodeUtf8 $ S.uri p])],
-            X.EventContent $ X.ContentText $ decodeUtf8 . Base64.encode $ S.object p,
+            X.EventContent $ X.ContentText $ decodeUtf8 $ S.object p,
             X.EventEndElement publishName
           ]
         snapshotFooter =
@@ -194,5 +193,51 @@ toName name = X.Name name Nothing Nothing
 
 -- Delta (Write)
 
-writeDelta :: D.Delta -> FilePath -> IO ()
-writeDelta = undefined -- TODO
+writeDelta :: D.Delta -> FilePath -> IO String
+writeDelta delta fp = do
+  print $ "here " ++ fp -- TODO: REMOVE
+  digest <- runConduitRes $ sourceDelta delta .| renderBytes def .| sinkDeltaFile .| sinkHash
+  return $ show (digest :: Digest SHA256)
+  where sinkDeltaFile = passthroughSink (sinkFileBS fp) (\_ -> return ())
+
+sourceDelta :: MonadIO m => D.Delta -> Source m X.Event
+sourceDelta delta = do
+  yieldMany deltaHeader
+  yieldMany $ concatMap publishEvent $ D.publishs delta
+  yieldMany $ concatMap withdrawEvent $ D.withdraws delta
+  yieldMany deltaFooter
+
+  where deltaHeader =
+          [
+            X.EventBeginDocument,
+            X.EventBeginElement deltaName [ (toName "session_id", [X.ContentText $ T.pack $ D.sessionId delta]),
+                                               (toName "serial", [X.ContentText $ T.pack . show $ D.serial delta]),
+                                               (toName "xmlns", [X.ContentText "http://www.ripe.net/rpki/rrdp"]),
+                                               (toName "version", [X.ContentText "1"])]
+          ]
+        publishEvent :: D.Publish -> [X.Event]
+        publishEvent p =
+          [
+            X.EventBeginElement publishName $
+              catMaybes [Just (toName "uri", [X.ContentText $ decodeUtf8 $ D.uri (p :: D.Publish)]),
+                         case D.hash (p :: D.Publish) of
+                           Nothing -> Nothing
+                           Just h  -> Just (toName "hash", [X.ContentText $ decodeUtf8 h])],
+            X.EventContent $ X.ContentText $ decodeUtf8 $ D.object p,
+            X.EventEndElement publishName
+          ]
+        withdrawEvent w =
+          [
+            X.EventBeginElement withdrawName [(toName "uri", [X.ContentText $ decodeUtf8 $ D.uri (w :: D.Withdraw)]),
+                                              (toName "hash", [X.ContentText $ decodeUtf8 $ D.hash (w :: D.Withdraw)])],
+            X.EventEndElement withdrawName
+          ]
+        deltaFooter =
+          [
+            X.EventEndElement deltaName,
+            X.EventEndDocument
+          ]
+
+deltaName, withdrawName :: X.Name
+deltaName = toName "delta"
+withdrawName = toName "withdraw"

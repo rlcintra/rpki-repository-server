@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     RPKI.Repository.Server
                      , RPKI.Repository.Data
+                     , RPKI.Repository.Delta
                      , RPKI.Repository.Notification
                      , RPKI.Repository.Rsync
                      , RPKI.Repository.Snapshot
@@ -34,6 +35,7 @@ library
                      , hxt 
                      , process
                      , text
+                     , time
                      , uuid
                      , warp
                      , wai-app-static

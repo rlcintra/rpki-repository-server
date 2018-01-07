@@ -17,5 +17,5 @@ data Snapshot = Snapshot {
 
 data Publish = Publish {
   uri          :: URI,
-  object       :: ObjectPayload
+  object       :: ObjectPayload -- ^ in base 64
 } deriving (Show, Read, Eq)

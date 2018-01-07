@@ -3,6 +3,7 @@ module RPKI.Repository.Rsync (updateRsyncMirrors, diff ) where
 import Conduit
 import qualified Crypto.Hash as C
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Char8 as C8
 import Data.Map.Strict ((!))
 import qualified Data.Map.Strict as Map
@@ -62,18 +63,20 @@ diff c s = do
         getAdded uriSet' = do
           let addedURIs = Set.toList $ Set.difference uriSet' stateURIs
           loadedURIs <- mapM loadURI addedURIs
-          return $ map (\(u, h, p) -> Added u h p) loadedURIs
+          return $ map (\(u, h, p) -> Added u h (Base64.encode p)) loadedURIs
         getUpdated :: Set.Set URI -> IO [Diff]
         getUpdated uriSet' = do
           let intersection = Set.toList $ Set.intersection uriSet' stateURIs
           loadedURIs <- mapM loadURI intersection
           return $ foldr f [] loadedURIs
           where f (u, h, p) accum =
-                  if h == hash (s ! u)
+                  if h == oldHash
                   then accum
-                  else Updated u h p : accum
+                  else Updated u h (Base64.encode p) oldHash : accum
+                  where oldHash = hash (s ! u)
         getDeleted :: Set.Set URI -> [Diff]
-        getDeleted uriSet' = map Removed $ Set.toList $ Set.difference stateURIs uriSet'
+        getDeleted uriSet' = map (\uri -> Removed uri (hash $ s ! uri)) difference
+          where difference = Set.toList $ Set.difference stateURIs uriSet'
         loadURI :: URI -> IO (URI, Hash, ObjectPayload)
         loadURI uri = do
           let fp = getRsyncPath rsyncBase (C8.unpack uri)
