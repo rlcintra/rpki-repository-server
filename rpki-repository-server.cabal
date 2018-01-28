@@ -16,6 +16,7 @@ extra-source-files:  README.org
 library
   hs-source-dirs:      src
   exposed-modules:     RPKI.Repository.Server
+                     , RPKI.Repository.Server.Internal
                      , RPKI.Repository.Data
                      , RPKI.Repository.Delta
                      , RPKI.Repository.Notification
@@ -53,3 +54,17 @@ executable rpki-repository-server
                      , optparse-applicative
                      , rpki-repository-server
                      , yaml
+
+test-suite test
+  hs-source-dirs:      tests
+  main-is:             test.hs
+  type:                exitcode-stdio-1.0
+  other-modules:       ServerTest
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , directory
+                     , tasty
+                     , tasty-hspec
+                     , temporary
+                     , rpki-repository-server

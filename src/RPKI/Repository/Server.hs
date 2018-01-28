@@ -2,6 +2,8 @@
 module RPKI.Repository.Server
   (
     startServer,
+    initialiseState,
+    rsyncUpdate,
     Config (..)
   ) where
 
@@ -23,6 +25,7 @@ import RPKI.Repository.Data
 import qualified RPKI.Repository.Delta as Delta
 import qualified RPKI.Repository.Notification as N
 import qualified RPKI.Repository.Snapshot as S
+import RPKI.Repository.Server.Internal
 import RPKI.Repository.Rsync
 import RPKI.Repository.XML
 import System.Directory (doesFileExist, createDirectoryIfMissing, createDirectory, getFileSize,
@@ -125,7 +128,7 @@ stateMapFromSnapshot s =
 startPeriodicRsyncUpdate :: Config -> State -> IO ()
 startPeriodicRsyncUpdate c s = do
   t1 <- getCurrentTime
-  recurrentRsyncUpdate c s
+  rsyncUpdate c s
   t2 <- getCurrentTime
   let delay = rsyncUpdateFrequency c - round (diffUTCTime t2 t1)
   if delay <= 0
@@ -133,9 +136,9 @@ startPeriodicRsyncUpdate c s = do
   else threadDelay $ delay * 1000 * 1000
   startPeriodicRsyncUpdate c s
 
-recurrentRsyncUpdate :: Config -> State -> IO ()
-recurrentRsyncUpdate c s = do
-  print "Sync thread running" -- TODO: remove
+rsyncUpdate:: Config -> State -> IO ()
+rsyncUpdate c s = do
+  print "Rsync update running" -- TODO: remove
   _ <- updateRsyncMirrors c
   (notification, sMap) <- takeMVar s
   diffs <- diff c sMap
@@ -193,7 +196,7 @@ startPeriodicRepoCleanup c state = cleanup (0, 0)
             then print "Warning: Cleanup delay is too short." -- TODO: use proper logging
             else threadDelay $ delay * 1000 * 1000
           cleanup (currentSnapshot, currentMinimumDelta)
-        frequency = 5 * 60 -- 5 minutes (specified in RFC)
+        frequency = 5 * 60 -- 5 minutes as specified in RFC
         getSnapshotsToDelete :: Int -> N.SessionId -> IO [FilePath]
         getSnapshotsToDelete lastSerial sId = do
           existentOlderSerials <- getExistentOlderSerials sId lastSerial
@@ -212,33 +215,6 @@ startPeriodicRepoCleanup c state = cleanup (0, 0)
           where sessionPath = getSessionPath c sId
 
 
--- Paths
-getNotificationPath :: Config -> FilePath
-getNotificationPath c = publicationPath c +/ "notification.xml"
-
-getSnapshotPath :: Config -> S.SessionId -> S.Serial -> FilePath
-getSnapshotPath c sId serial = getSerialPath c (B.unpack sId ) serial +/ "snapshot.xml"
-
-getPathForSnapshot :: Config -> S.Snapshot -> FilePath
-getPathForSnapshot c s = getSnapshotPath c (S.sessionId s) (S.serial s)
-
-doesNotificationFileExist :: Config -> IO Bool
-doesNotificationFileExist = doesFileExist . getNotificationPath
-
-getSessionPath :: Config -> N.SessionId -> FilePath
-getSessionPath c sId = publicationPath c +/ sId
-
-getSerialPath :: Config -> N.SessionId -> N.Serial -> FilePath
-getSerialPath c sId serial = getSessionPath c sId +/show serial
-
-getDeltaPath :: Config -> N.SessionId -> Delta.Serial -> FilePath
-getDeltaPath c sId serial = getSerialPath c sId serial +/ "delta.xml"
-
-getPathForDelta :: Config -> Delta.Delta -> FilePath
-getPathForDelta c d = getDeltaPath c (Delta.sessionId d) (Delta.serial d)
-
-(+/) :: String -> String -> String
-(+/) s1 s2 = s1 ++ [pathSeparator] ++ s2
 
 -- URIs
 snapshotURI :: Config -> S.SessionId -> S.Serial -> N.URI

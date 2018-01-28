@@ -191,11 +191,10 @@ toName :: T.Text -> X.Name
 toName name = X.Name name Nothing Nothing
 
 
--- Delta (Write)
+-- Delta (SAX - Conduit - Write)
 
 writeDelta :: D.Delta -> FilePath -> IO String
 writeDelta delta fp = do
-  print $ "Writing " ++ fp -- TODO: REMOVE
   digest <- runConduitRes $ sourceDelta delta .| renderBytes def .| sinkDeltaFile .| sinkHash
   return $ show (digest :: Digest SHA256)
   where sinkDeltaFile = passthroughSink (sinkFileBS fp) (\_ -> return ())
