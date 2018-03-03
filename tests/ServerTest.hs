@@ -17,94 +17,106 @@ import Test.Tasty.Hspec
 serverTests :: Spec
 serverTests = do
   around withConfig $
-    describe "Server - Rsync" $ do
-      specify "Initialisation - empty rsync directory" $ \config -> do
-        Right state <- initialiseState config
-        rsyncUpdate config state
-        notification <- getNotification config
-        N.serial (notification :: N.Notification) `shouldBe` 1
-        N.deltas notification `shouldBe` []
-        snapshot <- getSnapshot config notification
-        S.sessionId snapshot `shouldBe` (B.pack $ N.sessionId notification)
-        S.serial snapshot `shouldBe` N.serial (notification :: N.Notification)
-        S.publishs snapshot `shouldBe` []
+    describe "Server" $ do
+      describe "Rsync" $ do
+        specify "Initialisation - empty rsync directory" $ \config -> do
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          N.serial (notification :: N.Notification) `shouldBe` 1
+          N.deltas notification `shouldBe` []
+          snapshot <- getSnapshot config notification
+          S.sessionId snapshot `shouldBe` (B.pack $ N.sessionId notification)
+          S.serial snapshot `shouldBe` N.serial (notification :: N.Notification)
+          S.publishs snapshot `shouldBe` []
 
-      specify "Initialisation - non empty rsync directory" $ \config -> do
-        copyFile file1 (rsyncPath config +/ "file1.dat")
-        createDirectory $ rsyncPath config +/ "sub_dir"
-        copyFile file2 (rsyncPath config +/ "sub_dir" +/ "file1.dat")
-        Right state <- initialiseState config
-        rsyncUpdate config state
-        notification <- getNotification config
-        N.serial (notification :: N.Notification) `shouldBe` 1
-        N.deltas notification `shouldBe` []
-        snapshot <- getSnapshot config notification
-        S.sessionId snapshot `shouldBe` (B.pack $ N.sessionId notification)
-        S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
-        length (S.publishs snapshot) `shouldBe` 2
+        specify "Initialisation - non empty rsync directory" $ \config -> do
+          copyFile file1 (rsyncPath config +/ "file1.dat")
+          createDirectory $ rsyncPath config +/ "sub_dir"
+          copyFile file2 (rsyncPath config +/ "sub_dir" +/ "file1.dat")
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          N.serial (notification :: N.Notification) `shouldBe` 1
+          N.deltas notification `shouldBe` []
+          snapshot <- getSnapshot config notification
+          S.sessionId snapshot `shouldBe` (B.pack $ N.sessionId notification)
+          S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
+          length (S.publishs snapshot) `shouldBe` 2
 
-      specify "Rsync update - new file" $ \config -> do
-        copyFile file1 (rsyncPath config +/ "file1.dat")
-        Right state <- initialiseState config
-        rsyncUpdate config state
-        notification <- getNotification config
-        N.serial (notification :: N.Notification) `shouldBe` 1
-        N.deltas notification `shouldBe` []
-        snapshot <- getSnapshot config notification
-        S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
-        length (S.publishs snapshot) `shouldBe` 1
-        copyFile file2 (rsyncPath config +/ "file2.dat")
-        rsyncUpdate config state
-        notificationAfterUpdate <- getNotification config
-        N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
-        length (N.deltas notificationAfterUpdate) `shouldBe` 1
-        snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
-        S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
-        S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
-        length (S.publishs snapshotAfterUpdate) `shouldBe` 2
+        specify "Rsync update - new file" $ \config -> do
+          copyFile file1 (rsyncPath config +/ "file1.dat")
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          N.serial (notification :: N.Notification) `shouldBe` 1
+          N.deltas notification `shouldBe` []
+          snapshot <- getSnapshot config notification
+          S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
+          length (S.publishs snapshot) `shouldBe` 1
+          copyFile file2 (rsyncPath config +/ "file2.dat")
+          rsyncUpdate config state
+          notificationAfterUpdate <- getNotification config
+          N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
+          length (N.deltas notificationAfterUpdate) `shouldBe` 1
+          snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
+          S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
+          S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
+          length (S.publishs snapshotAfterUpdate) `shouldBe` 2
 
-      specify "Rsync update - update file" $ \config -> do
-        copyFile file1 (rsyncPath config +/ "file1.dat")
-        createBigFile (rsyncPath config +/ "big_file.dat")
-        Right state <- initialiseState config
-        rsyncUpdate config state
-        notification <- getNotification config
-        N.serial (notification :: N.Notification) `shouldBe` 1
-        N.deltas notification `shouldBe` []
-        snapshot <- getSnapshot config notification
-        S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
-        length (S.publishs snapshot) `shouldBe` 2
-        copyFile file2 (rsyncPath config +/ "file1.dat")
-        rsyncUpdate config state
-        notificationAfterUpdate <- getNotification config
-        N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
-        length (N.deltas notificationAfterUpdate) `shouldBe` 1
-        snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
-        S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
-        S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
-        length (S.publishs snapshotAfterUpdate) `shouldBe` 2
+        specify "Rsync update - update file" $ \config -> do
+          copyFile file1 (rsyncPath config +/ "file1.dat")
+          createBigFile (rsyncPath config +/ "big_file.dat")
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          N.serial (notification :: N.Notification) `shouldBe` 1
+          N.deltas notification `shouldBe` []
+          snapshot <- getSnapshot config notification
+          S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
+          length (S.publishs snapshot) `shouldBe` 2
+          copyFile file2 (rsyncPath config +/ "file1.dat")
+          rsyncUpdate config state
+          notificationAfterUpdate <- getNotification config
+          N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
+          length (N.deltas notificationAfterUpdate) `shouldBe` 1
+          snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
+          S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
+          S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
+          length (S.publishs snapshotAfterUpdate) `shouldBe` 2
 
-      specify "Rsync update - delete file" $ \config -> do
-        let file1Path = rsyncPath config +/ "file1.dat"
-        copyFile file1 file1Path
-        createBigFile (rsyncPath config +/ "big_file.dat")
-        Right state <- initialiseState config
-        rsyncUpdate config state
-        notification <- getNotification config
-        N.serial (notification :: N.Notification) `shouldBe` 1
-        N.deltas notification `shouldBe` []
-        snapshot <- getSnapshot config notification
-        S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
-        length (S.publishs snapshot) `shouldBe` 2
-        removeFile file1Path
-        rsyncUpdate config state
-        notificationAfterUpdate <- getNotification config
-        N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
-        length (N.deltas notificationAfterUpdate) `shouldBe` 1
-        snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
-        S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
-        S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
-        length (S.publishs snapshotAfterUpdate) `shouldBe` 1
+        specify "Rsync update - delete file" $ \config -> do
+          let file1Path = rsyncPath config +/ "file1.dat"
+          copyFile file1 file1Path
+          createBigFile (rsyncPath config +/ "big_file.dat")
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          N.serial (notification :: N.Notification) `shouldBe` 1
+          N.deltas notification `shouldBe` []
+          snapshot <- getSnapshot config notification
+          S.serial snapshot `shouldBe` (N.serial (notification :: N.Notification))
+          length (S.publishs snapshot) `shouldBe` 2
+          removeFile file1Path
+          rsyncUpdate config state
+          notificationAfterUpdate <- getNotification config
+          N.serial (notificationAfterUpdate :: N.Notification) `shouldBe` 2
+          length (N.deltas notificationAfterUpdate) `shouldBe` 1
+          snapshotAfterUpdate <- getSnapshot config notificationAfterUpdate
+          S.sessionId snapshotAfterUpdate `shouldBe` (B.pack $ N.sessionId notificationAfterUpdate)
+          S.serial snapshotAfterUpdate `shouldBe` (N.serial (notificationAfterUpdate :: N.Notification))
+          length (S.publishs snapshotAfterUpdate) `shouldBe` 1
+
+      describe "Snapshot" $ do
+        specify "Publish" $ \config -> do
+          copyFile file1 (rsyncPath config +/ "file1.dat")
+          Right state <- initialiseState config
+          rsyncUpdate config state
+          notification <- getNotification config
+          snapshot <- getSnapshot config notification
+          let publish = head $ S.publishs snapshot
+          S.object publish `shouldBe` B.pack "U29tZSByYW5kb20gZmlsZS4KCldpdGggbXVsdGlwbGUgbGluZXMu"
+
 
 -- Utility methods
 

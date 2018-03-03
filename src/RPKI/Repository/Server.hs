@@ -138,7 +138,7 @@ startPeriodicRsyncUpdate c s = do
 
 rsyncUpdate:: Config -> State -> IO ()
 rsyncUpdate c s = do
-  print "Rsync update running" -- TODO: remove
+  -- print "Rsync update running" -- TODO: use logging
   _ <- updateRsyncMirrors c
   (notification, sMap) <- takeMVar s
   diffs <- diff c sMap
