@@ -5,7 +5,7 @@ An implementation of the RPKI Repository Delta Protocol (RRDP) ([[https://tools.
 ** Status
 
 This implementation is under development and it is not yet ready for production. Currently it only allows mirroring 
-RSYNC repositories and serve them through.
+RSYNC repositories and serving them through RRDP.
 
 Future planned work will implement support for the Publication Protocol
 ([[https://tools.ietf.org/html/rfc8181][RFC 8181]]) and partial support to the Out-of-band Setup Protocol
@@ -40,35 +40,3 @@ stack exec rpki-repository-server
 A configuration file must be provided for the server initialisation. By default the server will look for a
 =config.yml= file at the current directory. A sample configuration file can be found at the project's root directory.
 
-** Plan
-*** 1.0
-**** Full support for RPKI Delta Procotol (RFC 8182)
-**** Publish objects from an rsync repository
-*** 1.1
-**** Support for =publisher_request= message as defined in Out-of-Band Setup Protocol (RFC 8183)
-**** Full support for publication protocol (RFC 8181), including CMS
-*** 1.2
-**** Web console
-***** Object browser
-****** Show validity of objects?
-***** Admin
-****** Manage publishers
-****** Manage objects?
-****** Manage rsync endpoints?
-***** Status
-***** Stats
-
-** ToDo List
-*** 1.0
-**** DONE Periodically resync dirs
-**** DONE Create delta
-**** DONE Turn on http server
-**** DONE If delta file is bigger than snapshot, ditch delta (confirm RFC)
-**** DONE Periodically remove unnecessary files (cleanup)
-**** DONE Yaml configuration (main module)
-**** IN_PROGRESS Implement tests
-**** TODO Implement feature to force restarting the session
-**** TODO Improve logs
-**** TODO Clean up code
-**** TODO Add documentation (project and source code)
-**** TODO Create release

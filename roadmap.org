@@ -1,0 +1,34 @@
+* Roadmap
+Note: Github doesn't render this document properly!
+** Planned releases
+*** 1.0
+**** Full support for RPKI Delta Procotol (RFC 8182)
+**** Publish objects from an rsync repository
+*** 1.1
+**** Support for =publisher_request= message as defined in Out-of-Band Setup Protocol (RFC 8183)
+**** Full support for publication protocol (RFC 8181), including CMS
+*** 1.2
+**** Web console
+***** Object browser
+****** Show validity of objects?
+***** Admin
+****** Manage publishers
+****** Manage objects?
+****** Manage rsync endpoints?
+***** Status
+***** Stats
+
+** ToDo List
+*** 1.0
+**** DONE Periodically resync dirs
+**** DONE Create delta
+**** DONE Turn on http server
+**** DONE If delta file is bigger than snapshot, ditch delta (confirm RFC)
+**** DONE Periodically remove unnecessary files (cleanup)
+**** DONE Yaml configuration (main module)
+**** IN_PROGRESS Implement tests
+**** TODO Implement feature to force restarting the session
+**** TODO Improve logs
+**** TODO Clean up code
+**** TODO Add documentation (project and source code)
+**** TODO Create release
