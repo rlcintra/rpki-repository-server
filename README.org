@@ -1,1 +1,74 @@
-# rpki-repository-server
+* rpki-repository-server
+
+An implementation of the RPKI Repository Delta Protocol (RRDP) ([[https://tools.ietf.org/html/rfc8182][RFC 8182]]).
+
+** Status
+
+This implementation is under development and it is not yet ready for production. Currently it only allows mirroring 
+RSYNC repositories and serve them through.
+
+Future planned work will implement support for the Publication Protocol
+([[https://tools.ietf.org/html/rfc8181][RFC 8181]]) and partial support to the Out-of-band Setup Protocol
+([[https://tools.ietf.org/html/rfc8183][RFC 8183]]).
+
+Version 1.0 is mostly done pending better testing, logging and improving documentation.
+
+** Building and running
+
+This project uses [[https://haskellstack.org][Stack]] for building. You can compile the server by running:
+
+#+BEGIN_SRC
+stack build
+#+END_SRC
+
+This will generate the server binary.
+
+Running tests can be accomplished by:
+
+#+BEGIN_SRC
+stack test
+#+END_SRC
+
+You can also run the server directly through Stack with:
+
+#+BEGIN_SRC
+stack exec rpki-repository-server
+#+END_SRC
+
+** Configuration
+
+A configuration file must be provided for the server initialisation. By default the server will look for a
+=config.yml= file at the current directory. A sample configuration file can be found at the project's root directory.
+
+** Plan
+*** 1.0
+**** Full support for RPKI Delta Procotol (RFC 8182)
+**** Publish objects from an rsync repository
+*** 1.1
+**** Support for =publisher_request= message as defined in Out-of-Band Setup Protocol (RFC 8183)
+**** Full support for publication protocol (RFC 8181), including CMS
+*** 1.2
+**** Web console
+***** Object browser
+****** Show validity of objects?
+***** Admin
+****** Manage publishers
+****** Manage objects?
+****** Manage rsync endpoints?
+***** Status
+***** Stats
+
+** ToDo List
+*** 1.0
+**** DONE Periodically resync dirs
+**** DONE Create delta
+**** DONE Turn on http server
+**** DONE If delta file is bigger than snapshot, ditch delta (confirm RFC)
+**** DONE Periodically remove unnecessary files (cleanup)
+**** DONE Yaml configuration (main module)
+**** IN_PROGRESS Implement tests
+**** TODO Implement feature to force restarting the session
+**** TODO Improve logs
+**** TODO Clean up code
+**** TODO Add documentation (project and source code)
+**** TODO Create release

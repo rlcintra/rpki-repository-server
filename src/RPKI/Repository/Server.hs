@@ -18,7 +18,6 @@ import Data.Monoid ((<>))
 import Data.Time.Clock
 import Data.UUID (toString)
 import qualified Data.UUID.V4 as UUIDv4
-import Control.Monad (forM, void)
 import Network.Wai.Application.Static
 import Network.Wai.Handler.Warp (run)
 import RPKI.Repository.Data
