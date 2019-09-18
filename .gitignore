@@ -2,4 +2,5 @@
 .stack-work/
 cabal.config
 out/
+var/
 *.iml

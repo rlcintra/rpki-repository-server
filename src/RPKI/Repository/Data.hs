@@ -1,10 +1,17 @@
 module RPKI.Repository.Data where
 
 import Control.Concurrent
+import Control.Exception
+import Control.Monad.Reader
+import Data.Typeable
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 import qualified RPKI.Repository.Notification as N
 import RPKI.Repository.Snapshot
+
+type Env = (Config, State)
+
+type AppM = ReaderT Env IO()
 
 data Config  = Config {
   publicationPath      :: FilePath,
@@ -15,6 +22,11 @@ data Config  = Config {
   rsyncUpdateFrequency :: Int, -- ^ in seconds
   rrdpPort             :: Int
 }
+
+data ServerInitialisationException = ServerInitialisationException
+  deriving (Show, Typeable)
+
+instance Exception ServerInitialisationException
 
 type Hash = B.ByteString
 

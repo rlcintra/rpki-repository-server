@@ -8,7 +8,9 @@ module RPKI.Repository.Server
   ) where
 
 import Control.Concurrent
+import Control.Exception (throw)
 import Control.Monad (filterM, forM, void)
+import Control.Monad.Reader
 import Crypto.Hash as C
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Char8 as B
@@ -43,42 +45,49 @@ startServer config =
       app = staticApp staticSettings
   in do logger <- setupLogger
         (logger2, closeLogger2) <- setupLogger'
-        log'' logger2 "Initisalising server"
-        state <- initialiseState config
-        case state of
-          Left errorMsg -> log'' logger2 errorMsg
-          Right s       -> do forkIO $ startPeriodicRsyncUpdate config s
-                              forkIO $ startPeriodicRepoCleanup config s
-                              run serverPort app
-        flushLogStr logger
-        -- run serverPort app
+        log'' logger2 "Initialising server"
+        emptyState <- newEmptyMVar
+        do initialiseState config
+           lift $ forkIO $ startPeriodicRsyncUpdate config state
+           forkIO $ startPeriodicRepoCleanup config state
+        run serverPort app
 
-initialiseState :: Config -> IO (Either String State)
-initialiseState c =
-  do notificationFileExist <- doesNotificationFileExist c
+initialise :: AppM
+initialise = do
+  env <- ask
+  initialiseState
+  lift $ forkIO $ runReader env startPeriodicRsyncUpdate 
+  lift $ forkIO $ runReader env startPeriodicRepoCleanup 
+
+initialiseState :: AppM
+initialiseState =
+  do (c, s) <- ask
+     notificationFileExist <- lift $ doesNotificationFileExist c
      if not notificationFileExist
-     then Right <$> initialiseServerSession c
-     else do notification <- loadNotification $ getNotificationPath c
+     then initialiseServerSession
+     else do notification <- lift $ loadNotification $ getNotificationPath c
              case notification of
-               Left msg -> return $ Left msg
-               Right n -> do snapshot <- loadSnapshot $
+               Left msg -> throw ServerInitialisationException -- log
+               Right n -> do snapshotE <- lift $ loadSnapshot $ 
                                 getSnapshotPath c (B.pack $ N.sessionId n) (N.serial (n :: N.Notification))
-                             case snapshot of
-                               Left msg' -> return $ Left msg'
-                               Right s   -> Right <$> newMVar (n, stateMapFromSnapshot s)
+                             case snapshotE of
+                               Left msg'      -> throw ServerInitialisationException -- log
+                               Right snapshot -> lift $ putMVar s (n, stateMapFromSnapshot snapshot)
 
-initialiseServerSession :: Config -> IO State
-initialiseServerSession c =
-  do sessionId <- toString <$> UUIDv4.nextRandom
-     let serial = 1
-     updateMirrorErrors <- updateRsyncMirrors c
-     --forM updateMirrorErrors putStrLn -- TODO: use logger
-     smvs <- getInitialStateMapValues c
-     createDirectoryIfMissing True $ getSessionPath c sessionId ++ "/" ++ show serial
-     (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial (map publish smvs)
-     notification <- createNotification c hash sessionId serial snapshot []
-     newMVar (notification,
-              foldr (\v l -> Map.insert (S.uri . publish $ v) v l) (Map.empty :: Map.Map S.URI StateMapValue) smvs)
+initialiseServerSession :: AppM
+initialiseServerSession =
+  do (c, s) <- ask
+     (notification, sv) <- 
+          lift $ do sessionId <- toString <$> UUIDv4.nextRandom
+                    let serial = 1
+                    updateMirrorErrors <- updateRsyncMirrors c
+                    --forM updateMirrorErrors putStrLn -- TODO: use logger
+                    smvs <- getInitialStateMapValues c
+                    createDirectoryIfMissing True $ getSessionPath c sessionId ++ "/" ++ show serial
+                    (snapshot, hash) <- createSnapshot c (B.pack sessionId) serial (map publish smvs)
+                    notification <- createNotification c hash sessionId serial snapshot []
+                    return $ (notification, foldr (\v l -> Map.insert (S.uri . publish $ v) v l) (Map.empty :: Map.Map S.URI StateMapValue) smvs)
+     lift $ putMVar s (notification, sv)
 
 getInitialStateMapValues :: Config -> IO [StateMapValue]
 getInitialStateMapValues c = catMaybes . fmap convert <$> diff c Map.empty
@@ -124,25 +133,27 @@ stateMapFromSnapshot s =
     (StateMapValue p (B.pack $ show (C.hash (Base64.decodeLenient $ S.object p) :: Digest SHA256))) l)
     Map.empty (S.publishs s)
 
-startPeriodicRsyncUpdate :: Config -> State -> IO ()
-startPeriodicRsyncUpdate c s = do
-  t1 <- getCurrentTime
-  rsyncUpdate c s
-  t2 <- getCurrentTime
+startPeriodicRsyncUpdate :: AppM
+startPeriodicRsyncUpdate = do
+  (c, s) <- ask
+  t1 <- lift getCurrentTime
+  rsyncUpdate
+  t2 <- lift $ getCurrentTime
   let delay = rsyncUpdateFrequency c - round (diffUTCTime t2 t1)
   if delay <= 0
-  then print "Warning: Rsync update delay is too short." -- TODO: use proper logging
-  else threadDelay $ delay * 1000 * 1000
-  startPeriodicRsyncUpdate c s
+  then lift $ print "Warning: Rsync update delay is too short." -- TODO: use proper logging
+  else lift $ threadDelay $ delay * 1000 * 1000
+  startPeriodicRsyncUpdate
 
-rsyncUpdate:: Config -> State -> IO ()
-rsyncUpdate c s = do
-  -- print "Rsync update running" -- TODO: use logging
-  _ <- updateRsyncMirrors c
-  (notification, sMap) <- takeMVar s
-  diffs <- diff c sMap
-  sv <- applyDiffs c (notification, sMap) diffs
-  putMVar s sv
+rsyncUpdate:: AppM
+rsyncUpdate = do
+  (c, s) <- ask
+-- print "Rsync update running" -- TODO: use logging
+  lift $ do _ <- updateRsyncMirrors c
+            (notification, sMap) <- takeMVar s
+            diffs <- diff c sMap
+            sv <- applyDiffs c (notification, sMap) diffs
+            putMVar s sv
 
 applyDiffs :: Config -> StateValue -> [Diff] -> IO StateValue
 applyDiffs _ sv [] = return sv
@@ -171,7 +182,7 @@ applyDiffs c sv@(n, sMap) diffs = do
 
 -- | The RFC 8182 defines that snapshot and delta files not referenced by the notification file should be retained for
 -- at least 5 minutes.
-startPeriodicRepoCleanup :: Config -> State -> IO ()
+startPeriodicRepoCleanup :: AppM
 startPeriodicRepoCleanup c state = cleanup (0, 0)
   where cleanup :: (Int, Int) -> IO ()
         cleanup (lastSerial, lastMinimumDelta) = do

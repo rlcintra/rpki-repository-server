@@ -34,7 +34,8 @@ library
                      , fast-logger
                      , filepath
                      , hexpat
-                     , hxt 
+                     , hxt
+                     , mtl
                      , process
                      , text
                      , time
